@@ -1,75 +1,129 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <time.h>
+#include <stdio.h>       // Para imprimir en consola (printf, perror) y formatear texto (sprintf)
+#include <stdlib.h>      // Para utilidades del sistema como salir del programa (exit) y números aleatorios (rand)
+#include <string.h>      // Para manipular cadenas de texto (strlen, strcpy, memset)
+#include <unistd.h>      // Para funciones del so Linux como sleep() y close()
+#include <arpa/inet.h>   // Para funciones de red e Internet (conversión de IPs y puertos)
+#include <time.h>        // Para obtener la hora actual y usarla como semilla de aleatoriedad
 
-#define PORT 8080
-#define BUFFER_SIZE 1024
+#define PUERTO 8080            // El puerto donde el broker está escuchando
+#define TAMANO_BUFFER 1024     // Tamaño en bytes para guardar texto
 
-int main() {
-    int sock;
-    struct sockaddr_in server_addr;
-    char buffer[BUFFER_SIZE];
+int main(int argc, char *argv[]) {
+    // En Linux, un socket se representa con un int simple.
+    // Es como el identificador único o "número de llamada" de nuestra conexión.
+    int socket_cliente;
 
-    // 1. Crear socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Error creando socket");
+    // Esta estructura es donde anotamos los datos del destinatario:
+    // a qué familia pertenece (IPv4), qué puerto tiene y cuál es su dirección IP.
+    struct sockaddr_in direccion_broker;
+
+    // ahora el mensaje es una cadena de chars con tamaño 1024
+    char buffer_mensaje[TAMANO_BUFFER];
+
+    // Aquí declaramos tema_partido como default "PartidoA", esto en caso de que no se declare nada en la consola
+    // Pero si se le da un nombre copia lo de la consola y lo escribe en la variable tema_partido
+    char tema_partido[32] = "PartidoA";
+    if (argc > 1) {
+        strncpy(tema_partido, argv[1], sizeof(tema_partido) - 1);
+    }
+
+    // ------------------------------------------------------------------------
+    // CREAR EL SOCKET
+    // ------------------------------------------------------------------------
+    // AF_INET      -> Usamos direcciones IPv4.
+    // SOCK_STREAM  -> Usamos TCP (orientado a conexión, confiable y ordenado).
+    // 0            -> Protocolo por defecto (IP).
+    // Si la función devuelve un número menor a 0, hubo un error al crearlo.
+    socket_cliente = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_cliente < 0) {
+        perror("Error al crear el socket");
         return -1;
     }
 
-    // 2. Configurar servidor
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
+    // ------------------------------------------------------------------------
+    // LLENAR LA struct direccion_broker; del Broker)
+    // ------------------------------------------------------------------------
+    // Limpiamos la estructura llenándola de ceros para evitar basura en memoria
+    memset(&direccion_broker, 0, sizeof(direccion_broker));
 
-    // Cambia esto si no es localhost
-    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
-        perror("Dirección inválida");
+    // Indicamos que nos conectaremos por IPv4
+    direccion_broker.sin_family = AF_INET;
+
+    // htons = "Host to Network Short". Convierte el número 8080 al orden de bytes (en Big Endian)
+    direccion_broker.sin_port = htons(PUERTO);
+
+    // inet_pton = "Presentation to Numeric". Traduce la IP en texto humano ("127.0.0.1")
+    // a su representación binaria que la tarjeta de red entiende.
+    if (inet_pton(AF_INET, "127.0.0.1", &direccion_broker.sin_addr) <= 0) {
+        perror("Dirección IP inválida o no soportada");
         return -1;
     }
 
-    // 3. Conectar al broker
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Error en connect");
+    // ------------------------------------------------------------------------
+    // CONECTARSE AL BROKER (Iniciar el canal TCP)
+    // ------------------------------------------------------------------------
+    // connect() llama al kernel de Linux para buscar al broker.
+    // AQUÍ es donde el sistema operativo ejecuta el 3-Way Handshake
+    // (SYN -> SYN/ACK -> ACK)
+    if (connect(socket_cliente, (struct sockaddr *)&direccion_broker, sizeof(direccion_broker)) < 0) {
+        perror("Error al conectar con el broker");
         return -1;
     }
 
-    printf("Conectado al broker\n");
+    printf(">>> Conectado exitosamente al broker como Periodista del [%s]\n", tema_partido);
 
-    // 4. Identificarse como publisher
-    strcpy(buffer, "PUBLISHER");
-    send(sock, buffer, strlen(buffer), 0);
+    // ------------------------------------------------------------------------
+    // PRESENTARSE ANTE EL BROKER
+    // ------------------------------------------------------------------------
+    // Le enviamos un primer mensaje de texto diciendo que somos un publicador 
+    // para que el broker sepa qué rol jugamos y no nos confunda con un hincha/suscriptor.
+    strcpy(buffer_mensaje, "PUBLISHER");
+    send(socket_cliente, buffer_mensaje, strlen(buffer_mensaje), 0);
 
-    sleep(1); // pequeña pausa
+    // Pausamos 1 segundo para darle tiempo al broker de procesar nuestro registro
+    sleep(1);
 
-    // 5. Enviar mínimo 10 mensajes
-    srand(time(NULL));
+    // ------------------------------------------------------------------------
+    // GENERAR Y TRANSMITIR LOS 10 EVENTOS DEL PARTIDO
+    // ------------------------------------------------------------------------
+    // Aquí estamos usando la hora actual y el ID del proceso para generar los mensajes aleatorios
+    srand(time(NULL) ^ getpid());
+
     for (int i = 1; i <= 10; i++) {
-        memset(buffer, 0, BUFFER_SIZE);
+        // memset llena la caja de ceros ('\0') para borrar lo que escribimos en la vuelta anterior.
+        memset(buffer_mensaje, 0, TAMANO_BUFFER);
 
-        int id = getpid(); // identificador del publisher
-        int tipo = rand() % 3; // 0,1,2
+        // Elegimos un número al azar entre 0, 1 y 2 para variar el tipo de noticia deportiva
+        int tipo_evento = rand() % 3;
 
-        if (tipo == 0) {
-            sprintf(buffer, "Publisher %d -> Gol de Equipo A al minuto %d", id, i * 5);
-        } 
-        else if (tipo == 1) {
-            sprintf(buffer, "Publisher %d -> Cambio: jugador %d entra por jugador %d", id, i, i+10);
-        } 
-        else {
-            sprintf(buffer, "Publisher %d -> Tarjeta amarilla al número %d de Equipo B", id, i);
+        // snprintf lo usamos para evitar el error de buffer overflows por lo que aquí si definimos el tamaño de lo que imprimimos
+        // Toma variables y las concatena dentro de un texto.
+        // Usamos el separador '|' para que el broker sepa qué parte es el tema y qué parte es la noticia.
+        if (tipo_evento == 0) {
+            snprintf(buffer_mensaje, TAMANO_BUFFER, "%s|Gol del equipo local al minuto %d", tema_partido, i * 7);
+        } else if (tipo_evento == 1) {
+            snprintf(buffer_mensaje, TAMANO_BUFFER, "%s|Cambio de jugador en el minuto %d", tema_partido, i * 6);
+        } else {
+            snprintf(buffer_mensaje, TAMANO_BUFFER, "%s|Tarjeta amarilla al número 10 en el minuto %d", tema_partido, i * 5);
         }
 
-        send(sock, buffer, strlen(buffer), 0);
+        // send() toma los bytes del mensaje y los lleva hacia el broker.
+        send(socket_cliente, buffer_mensaje, strlen(buffer_mensaje), 0);
 
-        printf("Enviado: %s\n", buffer);
+        printf("[Evento %d/10 enviado]: %s\n", i, buffer_mensaje);
 
+        // Esperamos 2 segundos antes de mandar el siguiente gol/cambio
+        // para que se aprecie la llegada en tiempo real en la pantalla del hincha.
         sleep(2);
     }
 
-    printf("Todos los mensajes enviados\n");
+    printf(">>> Todos los reportes del partido fueron enviados con éxito.\n");
 
-    close(sock);
+    // ------------------------------------------------------------------------
+    // CERRAR LA CONEXIÓN
+    // ------------------------------------------------------------------------
+    // Al cerrar el socket, el sistema operativo envía el paquete [FIN] de TCP
+    // para avisarle al broker que terminamos y liberar la memoria de la red.
+    close(socket_cliente);
     return 0;
 }
