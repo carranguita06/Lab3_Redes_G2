@@ -18,6 +18,7 @@ typedef struct {
 } Client;
 
 int main() {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     int sock;
     struct sockaddr_in server_addr, client_addr;
     socklen_t addr_len = sizeof(client_addr);

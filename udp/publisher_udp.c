@@ -9,6 +9,7 @@
 #define BUFFER_SIZE 1024
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     // Recibe el tema como argumento: ./publisher_udp partido1
     char *topic = "partido1";
     if (argc >= 2) topic = argv[1];

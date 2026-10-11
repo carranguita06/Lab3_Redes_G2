@@ -8,6 +8,7 @@
 #define BUFFER_SIZE 1024
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     // Recibe los temas como argumento: 
     // ./subscriber_udp partido1
     // ./subscriber_udp partido1,partido2
